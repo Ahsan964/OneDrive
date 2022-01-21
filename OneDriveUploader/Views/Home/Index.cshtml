@@ -1,0 +1,515 @@
+﻿@{
+    ViewBag.Title = "Home Page";
+
+}
+
+<div class="modal fade" id="exampleModalCenter" tabindex="-1" role="dialog" aria-labelledby="exampleModalCenterTitle" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exampleModalCenterTitle">Replace or Keep Both (files) </h5>
+            </div>
+
+            <div class="body" id="modelbody">
+            </div>
+        </div>
+    </div>
+</div>
+<script type="text/javascript" src="https://ajax.googleapis.com/ajax/libs/jquery/1.8.3/jquery.min.js"></script>
+
+<div class="container">
+    <h2>
+        Cloud SharePoint Data
+    </h2>
+    <div class="row">
+        @* ===============for large file uplaod =========================== *@
+        <div class="col-md-6">
+            <div id="VideoDiv">
+                <form action="/" method="post">
+                    <div class="form-group">
+                        <label>Filename:</label>
+                        <input type="file" class="form-control" id="fileInput" />
+                        <input type="hidden" id="existingfileid" value="" />
+                    </div>
+                    <div class="form-group">
+                        <input type="button" class="btn btn-info" id="btnUploadfile" value="Upload a File" />
+                    </div>
+                    <div class="form-group">
+                        <div id="progressbar_container" style="width: 100%; height: 30px; position: relative; background-color: grey; display: none">
+                            <div id="progressbar" style="width: 0%; height: 100%; position: absolute; background-color: green"></div>
+                            <span id="progressbar_label" style="position: absolute; left: 35%; top: 20%">Uploading...</span>
+                        </div>
+                    </div>
+
+                </form>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <form action="/" method="post">
+                <div class="form-group">
+                    <label>Create Folder</label>
+                    <input type="text" multiple id="createfolder" class="form-control" onkeypress="return /[0-9a-zA-Z]/i.test(event.key)">
+
+                </div>
+                <div class="form-group">
+                    <input type="button" class="btn btn-primary" id="btnnewfolder" value="New Folder" />
+                    <span id="lblMessage" style="color: Green"></span>
+                </div>
+
+            </form>
+        </div>
+    </div>
+</div>
+@*<progress id="fileProgress" style="display: none"></progress>*@
+
+<div class="container">
+    <div class="row">
+        <hr />
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="@Url.Action("Index","Home",new { id = ""})"><i class="glyphicon glyphicon-home"></i></a></li>
+                @if (Session["breadcrumb"] != null)
+                {
+                    foreach (var item in (Dictionary<string, string>)Session["breadcrumb"])
+                    {
+                <li class="breadcrumb-item"><a href="@Url.Action("Index", "Home", new { id = item.Value, name = item.Key , Isbreadcrumb  = true})">@item.Key</a></li>
+                    }
+                }
+            </ol>
+        </nav>
+        @*<a  href="@Url.Action("Index","Home",new { id = ""})"> <i class="glyphicon glyphicon-home"></i>  </a>*@
+        <table class="table">
+            <tr>
+                <th></th>
+                <th>Name</th>
+                <th>Type </th>
+                <th>Size</th>
+                <th>Date</th>
+                <th>Share Link</th>
+                <th>Actions</th>
+            </tr>
+            @foreach (var item in ViewBag.DataModel)
+            {
+                <tr>
+                    <td> <input type="hidden" name="name" value="@item.Id" id="itemid" />  </td>
+                    @if (item.Name.Contains("."))
+                    {
+                        <td><i class="glyphicon glyphicon-file"></i> <a target="_blank" href="@item.DownloadURL"> @item.Name</a> </td>
+                    }
+                    else
+                    {
+                        <td><i class="glyphicon glyphicon-folder-close"></i> <a href="@Url.Action("Index", "Home", new { id = item.Id , name = item.Name})"> @item.Name</a> </td>
+                    }
+                    <td>@item.FileType</td>
+                    <td>
+                        @if (item.FileType != "folder")
+                        {
+                            @item.Size
+                        }
+                    </td>
+                    <td>@item.CreatedDateTime</td>
+                    <td>
+                        @{ string shareableurl = string.IsNullOrWhiteSpace(item.ShareAbleLink)
+                            ? "" :
+                            item.ShareAbleLink;
+                        }
+                        @if (!string.IsNullOrWhiteSpace(shareableurl))
+                        {
+                            <p style="display:none">@shareableurl  </p>
+                            <a title="Copy  Link" href="javascript:void(0)"> <i class="glyphicon glyphicon-copy copyclipboard"></i>  </a>
+                        }
+                    </td>
+                    <td>
+                        <a id="deletebtn" href="javascript:void(0)"> <i class="glyphicon glyphicon-trash"></i>  </a>
+                        <a id="sharelink" href="javascript:void(0)"> <i class="glyphicon glyphicon-share"></i>  </a>
+                        @if (item.FileType != "folder")
+                        {
+                            <a id="downlaodbtn" target="_blank" href="@Url.Action("DownloadFile","Home",new { id = item.Id, name = item.Name })"> <i class="glyphicon glyphicon-download"></i>  </a>
+                        }
+
+                    </td>
+                </tr>
+            }
+        </table>
+    </div>
+</div>
+<script>
+
+    var id = window.location.pathname.split('/')?.splice(3, 1)[0];
+    id = id == undefined || id == null ? "" : id;
+    var progressBarStart = function () {
+        $("#progressbar_container").show();
+    }
+
+    var progressBarUpdate = function (percentage) {
+        $('#progressbar_label').html(percentage + "%");
+        $("#progressbar").width(percentage + "%");
+    }
+
+    var progressBarComplete = function () {
+        $("#progressbar_container").fadeOut(500);
+    }
+    var file;
+
+    $('#fileInput').change(function (e) {
+        file = e.target.files[0];
+    });
+
+    var uploadCompleted = function () {
+        var formData = new FormData();
+        formData.append('fileName', file.name);
+        formData.append('completed', true);
+        var xhr2 = new XMLHttpRequest();
+        xhr2.onload = function () {
+            Swal.fire(
+                'File Uploaded!',
+                'File Uploaded Successfully !',
+                'success'
+            );
+            window.location.reload();
+            progressBarUpdate(100);
+            progressBarComplete();
+        }
+        //var id = window.location.pathname.split('/')?.splice(3, 1)[0];
+        //id = id == undefined || id == null ? "" : id;
+        let existingtype = document.getElementById("existingfileid").value;
+        xhr2.open("POST", "/Home/UploadComplete?fileName=" + file.name + "&complete=" + 1 + "&folderid=" + id + "&existingtype=" + existingtype, true);
+        xhr2.send(formData);
+    }
+    var multiUpload = function (count, counter, blob, completed, start, end, bytesPerChunk) {
+        counter = counter + 1;
+        if (counter <= count) {
+            var chunk = blob.slice(start, end);
+            var xhr = new XMLHttpRequest();
+            xhr.onload = function (res) {
+                let result = JSON.parse(res.currentTarget.response);
+                //let ex =   document.getElementById("existingfileid").value;
+                if (result.success == "exising") {
+                    Swal.close();
+                    $('#exampleModalCenter').modal('show')
+                    var mhtml = ` <div class="modal-body">
+                                ${result.msg}
+                            <div class="list-group">
+                            <button  data-dismiss='modal' type="button" class='list-group-item list-group-item-action existingfile'> Replace</button>
+                            <button data-dismiss='modal' type="button" class='list-group-item list-group-item-action existingfile'> Keep Both </button>
+                            </div>
+                            </div>`;
+                    $("#modelbody").html(mhtml);
+                    progressBarComplete();
+                } else {
+                    start = end;
+                    end = start + bytesPerChunk;
+                    if (count == counter) {
+                        uploadCompleted();
+                    } else {
+                        var percentage = (counter / count) * 100;
+                        progressBarUpdate(percentage);
+                        multiUpload(count, counter, blob, completed, start, end, bytesPerChunk);
+                    }
+                }
+            }
+            xhr.open("POST", "/Home/MultiUpload?id=" + counter.toString() + "&fileName=" + file.name + "&folderid=" + id, true);
+            xhr.send(chunk);
+        }
+    }
+
+
+    $("#VideoDiv").on("click", "#btnUploadfile", function () {
+        if (!$('#fileInput').val()) {
+            Swal.fire(
+                'Chose file!',
+                'Please Chose file for upload!',
+                'info'
+            );
+        } else {
+            swal.fire({
+                title: 'Please Wait!',
+                html: 'Please wait to complete an action...',
+                timerprogressbar: true,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                didOpen: () => {
+                    Swal.showLoading()
+                    const b = Swal.getHtmlContainer().querySelector('b')
+                    timerInterval = setInterval(() => {
+                        // b.textContent = Swal.getTimerLeft()
+                    }, 100)
+                }
+            });
+            var blob = file;
+            var bytesPerChunk = 3757000;
+            var size = blob.size;
+
+            var start = 0;
+            var end = bytesPerChunk;
+            var completed = 0;
+            var count = size % bytesPerChunk == 0 ? size / bytesPerChunk : Math.floor(size / bytesPerChunk) + 1;
+            var counter = 0;
+            progressBarStart();
+            multiUpload(count, counter, blob, completed, start, end, bytesPerChunk);
+        }
+    });
+    //-------------------------------existing file uploaded---------------------------------
+    //-------------------------------existing file uploaded---------------------------------
+    $(document).on('click', '.existingfile', (req) => {
+        swal.fire({
+            title: 'Please Wait!',
+            html: 'Please wait to complete an action...',
+            timerprogressbar: true,
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            didOpen: () => {
+                Swal.showLoading()
+                const b = Swal.getHtmlContainer().querySelector('b')
+                timerInterval = setInterval(() => {
+                    // b.textContent = Swal.getTimerLeft()
+                }, 100)
+            }
+        });
+        document.getElementById("existingfileid").value = req.srcElement.innerText;
+        var blob = file;
+        var bytesPerChunk = 3757000;
+        var size = blob.size;
+        var start = 0;
+        var end = bytesPerChunk;
+        var completed = 0;
+        var count = size % bytesPerChunk == 0 ? size / bytesPerChunk : Math.floor(size / bytesPerChunk) + 1;
+        var counter = 0;
+        progressBarStart();
+        multiUploadExisting(count, counter, blob, completed, start, end, bytesPerChunk);
+
+    });
+    var multiUploadExisting = function (count, counter, blob, completed, start, end, bytesPerChunk) {
+        counter = counter + 1;
+        if (counter <= count) {
+            var chunk = blob.slice(start, end);
+            var xhr = new XMLHttpRequest();
+            xhr.onload = function (res) {
+                let result = JSON.parse(res.currentTarget.response);
+                //let ex =   document.getElementById("existingfileid").value;
+                start = end;
+                end = start + bytesPerChunk;
+                if (count == counter) {
+                    uploadCompleted();
+                    // window.location.reload();
+                } else {
+                    var percentage = (counter / count) * 100;
+                    progressBarUpdate(percentage);
+                    multiUploadExisting(count, counter, blob, completed, start, end, bytesPerChunk);
+                }
+            }
+            xhr.open("POST", "/Home/MultiUpload?id=" + counter.toString() + "&fileName=" + file.name + "&folderid=" + id + "&checkexistnig=" + true, true);
+            xhr.send(chunk);
+        }
+    }
+    //-------------------------------existing file uploaded---------------------------------
+</script>
+<script type="text/javascript">
+
+    $("body").on("click", "#btnnewfolder", function () {
+        let timerInterval
+
+        var name = $("#createfolder").val();
+        if (name != "" && name != undefined) {
+            var id = window.location.pathname.split('/').splice(3, 1)[0];
+            swal.fire({
+                title: 'Please Wait!',
+                html: 'Please wait to complete an action...',
+                timerprogressbar: true,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                didOpen: () => {
+                    Swal.showLoading()
+                    const b = Swal.getHtmlContainer().querySelector('b')
+                    timerInterval = setInterval(() => {
+                       // b.textContent = Swal.getTimerLeft()
+                    }, 100)
+                }
+            });
+            $.ajax({
+                url: '/Home/createfolder',
+                type: "POST",
+                data: {
+                    id: id,
+                    name: name
+                },
+                success: function (result) {
+                    Swal.fire(
+                        'Folder Created Successfully !',
+                        'Your Folder Created Successfully !',
+                        'success'
+                    );
+                    window.location.reload();
+                },
+                error: function (err) {
+                    alert(err.statusText);
+                }
+            });
+        } else {
+            Swal.fire(
+                'Error!',
+                'Please Enter Folder Name!',
+                'error'
+            );
+        }
+    });
+    $("body").on("click", "#deletebtn", function () {
+
+        var id = $(this).closest('tr').find('input[type="hidden"]').val();
+        //if (confirm("Are you sure to want to delet it ?")) {
+        $("#fileProgress").show();
+        Swal.fire({
+            title: 'Are you sure?',
+            text: "You won't be able to revert this!",
+            icon: 'warning',
+            showCancelButton: true,
+            confirmButtonColor: '#3085d6',
+            cancelButtonColor: '#d33',
+            confirmButtonText: 'Yes, delete it!'
+        }).then((result) => {
+            if (result.isConfirmed) {
+                swal.fire({
+                    title: 'Please Wait!',
+                    html: 'Please wait to complete an action...',
+                    timerprogressbar: true,
+                    allowOutsideClick: false,
+                    allowEscapeKey: false,
+                    didOpen: () => {
+                        Swal.showLoading()
+                        const b = Swal.getHtmlContainer().querySelector('b')
+                        timerInterval = setInterval(() => {
+                            b.textContent = Swal.getTimerLeft()
+                        }, 100)
+                    }
+                });
+                $.ajax({
+                    url: '/Home/DeleteFile',
+                    type: "POST",
+                    data: { id: id },
+                    success: function (result) {
+                        Swal.fire(
+                            'Deleted!',
+                            'Your file has been deleted.',
+                            'success'
+                        )
+                        window.location.reload();
+                    },
+                    error: function (err) {
+                        alert(err.statusText);
+                    }
+                });
+
+            }
+        })
+
+    });
+
+
+    $("body").on("click", "#sharelink", function () {
+        swal.fire({
+            title: 'Please Wait!',
+            html: 'Please wait to complete an action...',
+            timerprogressbar: true,
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            didOpen: () => {
+                Swal.showLoading()
+                const b = Swal.getHtmlContainer().querySelector('b')
+                timerInterval = setInterval(() => {
+                    b.textContent = Swal.getTimerLeft()
+                }, 100)
+            }
+        });
+        var id = $(this).closest('tr').find('input[type="hidden"]').val();
+        $.ajax({
+            url: '/Home/ShareAbleLink',
+            type: "POST",
+            data: {
+                id: id,
+            },
+            success: function (result) {
+                if (result.success) {
+                    Swal.fire(
+                        'Shareable Link Created Successfully !',
+                        result.sharelink,
+                        'success'
+                    );
+                } else {
+                    Swal.fire(
+                        'Error!',
+                        result.msg,
+                        'error'
+                    );
+                    alert(result.msg);
+                }
+            },
+            error: function (err) {
+                alert(err.statusText);
+            }
+        });
+    });
+    //--------------for clipboard-------------
+
+    var a = document.getElementsByClassName('copyclipboard');
+    for (var i = 0; i < a.length; i++) {
+        a[i].addEventListener('click', function () {
+            var b = this.parentNode.parentNode.textContent;
+            copyToClipboard(b);
+            alert(b);
+        });
+    }
+    function copyToClipboard(text) {
+        var dummy = document.createElement("textarea");
+        document.body.appendChild(dummy);
+        dummy.value = text;
+        dummy.select();
+        document.execCommand("copy");
+        document.body.removeChild(dummy);
+    }
+
+    //smal fille---------------------------
+        @*$("body").on("click", "#btnUpload", function () {
+            var folder = $("#file");
+            var filelist = folder[0].files;
+            var data = FormData();
+            if (filelist.length > 0) {
+                for (var i = 0; i < filelist.length; i++) {
+                    data.append(filelist[i].name, filelist[i]);
+                }
+                var id = window.location.pathname.split('/')?.splice(3, 1)[0];
+                data.append("id", id);
+                $.ajax({
+                    url: '@Url.Action("UploadFile", "Home")',
+                    type: 'POST',
+                    data: data,
+                    cache: false,
+                    contentType: false,
+                    processData: false,
+                    success: function (fileName) {
+                    $("#fileProgress").hide();
+                    $("#lblMessage").html("<b>" + fileName + "</b> has been uploaded.");
+                    window.location.reload();
+                    },
+                    xhr: function () {
+                    var fileXhr = $.ajaxSettings.xhr();
+                    if (fileXhr.upload) {
+                    $("progress").show();
+                    fileXhr.upload.addEventListener("progress", function (e) {
+                    if (e.lengthComputable) {
+                    $("#fileProgress").attr({
+                    value: e.loaded,
+                    max: e.total
+                    });
+                    }
+                    }, false);
+                    }
+                    return fileXhr;
+                    }
+                    });
+                    } else {
+                    alert("Please Chose File for Upload")
+                    $("#fileProgress").hide();
+                    }
+                    });*@
+
+</script>
